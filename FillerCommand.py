@@ -126,6 +126,7 @@ def second_hex_body(size, hex_body, core_body, x_space, y_space):
 
     return hex_body_2
 
+
 def create_core_body(input_body, input_shell_thickness):
     ao = AppObjects()
 
@@ -134,7 +135,7 @@ def create_core_body(input_body, input_shell_thickness):
     input_collection = adsk.core.ObjectCollection.create()
     input_collection.add(input_body)
     shell_input = shell_features.createInput(input_collection)
-    shell_input.insideThickness = input_shell_thickness
+    shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
     shell_feature = shell_features.add(shell_input)
 
     # Offset internal faces 0
@@ -159,8 +160,14 @@ def create_core_body(input_body, input_shell_thickness):
     cell = boundary_fill_input.bRepCells.item(0)
     cell.isSelected = True
     boundary_fill = boundary_fills.add(boundary_fill_input)
-
     core_body = boundary_fill.bodies[0]
+
+    # Remove extra surface
+    remove_features = ao.root_comp.features.removeFeatures
+    for body in offset_feature.bodies:
+        remove_features.add(body)
+
+
     return core_body
 
 
@@ -202,11 +209,9 @@ class FillerCommand(Fusion360CommandBase):
         start_volume = start_body.volume
 
         # Create Core Body of input body
-        create_core_body(start_body, input_shell_thickness)
+        core_body = create_core_body(start_body, input_shell_thickness)
 
-        # Define that the extent is a distance extent of 5 cm.
-        height = adsk.core.ValueInput.createByReal(10)
-
+        # Define that the extents and spacing - Hex specific
         x_space = math.sqrt(3) * input_size
         y_space = 2 * input_size
 
@@ -215,57 +220,31 @@ class FillerCommand(Fusion360CommandBase):
 
         x_qty_raw = math.ceil(extent_vector.x / x_space)
         y_qty_raw = math.ceil(extent_vector.y / y_space)
+        height_raw = extent_vector.z * 1.1
+
         x_qty = adsk.core.ValueInput.createByReal(x_qty_raw)
         y_qty = adsk.core.ValueInput.createByReal(y_qty_raw)
+        height = adsk.core.ValueInput.createByReal(height_raw)
 
-
-        # ao.ui.messageBox("Extrudes 1")
-
+        # Create Hex Sketches
         prof_1 = hex_sketch(adsk.core.Point3D.create(0, 0, 0), input_size, height, input_rib_thickness)
         prof_2 = hex_sketch(adsk.core.Point3D.create(x_space / 2, .75 * y_space, 0), input_size, height, input_rib_thickness)
 
-        # extrude_1 = hex_extrude(prof_1, height, [core_body])
-        # extrude_2 = hex_extrude(prof_2, height, [core_body])
-
         extrude_1 = hex_extrude(prof_1, height)
         extrude_2 = hex_extrude(prof_2, height)
-
-        # for x in range(0, x_qty):
-        #     for y in range(0, y_qty):
-        #
-        #         center_1 = adsk.core.Point3D.create(x * x_space, 1.5 * y * y_space, 0)
-        #         center_2 = adsk.core.Point3D.create(x_space * (x + .5), 1.5 * y_space * y + .75 * y_space, 0)
-        #
-        #         prof_1 = hex_sketch(center_1, input_size, height, thickness)
-        #         prof_2 = hex_sketch(center_2, input_size, height, thickness)
-        #
-        #         extrude_1 = hex_extrude(prof_1, height, [core_body])
-        #         extrude_2 = hex_extrude(prof_2, height, [core_body])
 
         extrude_cut_collection = adsk.core.ObjectCollection.create()
         extrude_cut_collection.add(extrude_1.bodies[0])
         extrude_cut_collection.add(extrude_2.bodies[0])
 
-        # ao.ui.messageBox("Pattern 1")
-
-        pattern_feature = hex_pattern(extrude_cut_collection, x_qty, x_space, y_qty, y_space)
-
-        # ao.ui.messageBox("Collection 1")
+        hex_pattern(extrude_cut_collection, x_qty, x_space, y_qty, y_space)
 
         hex_tools = adsk.core.ObjectCollection.create()
         hex_tools.add(extrude_1.bodies[0])
         hex_tools.add(extrude_2.bodies[0])
 
-        # for count in range(0, 50):
-        #     hex_tools.add(pattern_feature.bodies[count])
-
-        # hex_body = draw_hex(adsk.core.Point3D.create(0, 0, 0), input_size, height, thickness)
-        # hex_tools = pattern_hex(input_size, hex_body)
-        # hex_tools = pattern_hex(input_size, hex_body, core_body)
-
-        for count in range(ao.design.rootComponent.bRepBodies.count - 200, ao.design.rootComponent.bRepBodies.count):
+        for count in range(ao.design.rootComponent.bRepBodies.count - (2 * x_qty_raw * y_qty_raw), ao.design.rootComponent.bRepBodies.count):
             hex_tools.add(ao.design.rootComponent.bRepBodies[count])
-        # ao.ui.messageBox("Combine 1")
 
         combine_features = ao.root_comp.features.combineFeatures
 
@@ -273,29 +252,17 @@ class FillerCommand(Fusion360CommandBase):
         hex_combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
         combine_features.add(hex_combine_input)
 
-        # for body in pattern_feature.bodies:
-        #     # Create InterferenceInput
-        #     check = adsk.core.ObjectCollection.create()
-        #     check.add(body)
-        #     check.add(core_body)
-        #     interference_input = ao.design.createInterferenceInput(check)
-        #     results = ao.design.analyzeInterference(interference_input)
-        #
-        #     if results.count > 0:
-        #         hex_tools = adsk.core.ObjectCollection.create()
-        #         hex_tools.add(body)
-        #         hex_combine_input = combine_features.createInput(core_body, hex_tools)
-        #         hex_combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
-        #         combine_features.add(hex_combine_input)
-
-        # ao.ui.messageBox("Combine 2")
-        #
         final_combine_collection = adsk.core.ObjectCollection.create()
         final_combine_collection.add(core_body)
-        final_combine_input = combine_features.createInput(the_first_selection, final_combine_collection)
+        final_combine_input = combine_features.createInput(start_body, final_combine_collection)
         final_combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
         combine_features.add(final_combine_input)
 
+        final_volume = start_body.volume
+
+        ao.ui.messageBox(
+            'The final percentage infill is:  {0:.2g}% \n'.format(100 * final_volume/start_volume)
+        )
 
     # Run when the user selects your command icon from the Fusion 360 UI
     # Typically used to create and display a command dialog box
@@ -311,13 +278,16 @@ class FillerCommand(Fusion360CommandBase):
         ao = AppObjects()
 
         # Create a few inputs in the UI
-        inputs.addValueInput('size_input', 'Size (Major Diameter)', ao.units_manager.defaultLengthUnits, default_size)
-        inputs.addValueInput('shell_input', 'Shell Thickness (Outer Wall)', ao.units_manager.defaultLengthUnits, default_shell)
-        inputs.addValueInput('rib_input', 'Rib Thickness', ao.units_manager.defaultLengthUnits, default_rib)
+        inputs.addValueInput('size_input', 'Size (Major Diameter)',
+                             ao.units_manager.defaultLengthUnits, default_size)
+        inputs.addValueInput('shell_input', 'Shell Thickness (Outer Wall)',
+                             ao.units_manager.defaultLengthUnits, default_shell)
+        inputs.addValueInput('rib_input', 'Rib Thickness',
+                             ao.units_manager.defaultLengthUnits, default_rib)
 
         # inputs.addBoolValueInput('bool_input', '***Sample***Checked', True)
         # inputs.addStringValueInput('string_input', '***Sample***String Value', 'Default value')
-        selection = inputs.addSelectionInput('selection_input', '***Sample***Selection', 'Select Something')
+        selection = inputs.addSelectionInput('selection_input', 'Body for Infill', 'Select a solid body')
         selection.addSelectionFilter("SolidBodies")
-        selection..setSelectionLimits(1, 1)
+        selection.setSelectionLimits(1, 1)
 
