@@ -22,14 +22,20 @@ Documentation to come later. For now:
  - Specify the "cell" size.  This is defined as the circumscribed circle diameter for a given cell.  Better documentation to come later.
  - Select the type of infill:
    - Hex
+
+   ![filler Hex](./resources/filler_hex.png)
    - Triangles
+
+   ![filler Triangles](./resources/filler_triangles.png)
    - Squares
+
+   ![filler Squares](./resources/filler_squares.png)
+
    - Circles
 
-![filler Hex](./resources/filler_hex.png)
-![filler Triangles](./resources/filler_triangles.png)
-![filler Squares](./resources/filler_squares.png)
-![filler Circles](./resources/filler_circles.png)
+   ![filler Circles](./resources/filler_circles.png)
+
+
 ## License
 Samples are licensed under the terms of the [MIT License](http://opensource.org/licenses/MIT). Please see the [LICENSE](LICENSE) file for full details.
 
