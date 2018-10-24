@@ -12,68 +12,6 @@ from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 Point = collections.namedtuple("Point", ["x", "y"])
 
 
-def pointy_hex_corner(center, size, i):
-    angle_deg = 60 * i - 30
-    angle_rad = math.pi / 180 * angle_deg
-    return adsk.core.Point3D.create(center.x + size * math.cos(angle_rad),
-                                    center.y + size * math.sin(angle_rad),
-                                    0)
-
-
-def pointy_square_corner(center, size, i):
-    angle_deg = 90 * i
-    angle_rad = math.pi / 180 * angle_deg
-    return adsk.core.Point3D.create(center.x + size * math.cos(angle_rad),
-                                    center.y + size * math.sin(angle_rad),
-                                    0)
-
-
-def pointy_shape_corner(center, size, i, offset, sides):
-    angle_deg = (360 / sides) * i - offset
-    angle_rad = math.pi / 180 * angle_deg
-    return adsk.core.Point3D.create(center.x + size * math.cos(angle_rad),
-                                    center.y + size * math.sin(angle_rad),
-                                    0)
-
-
-# Alternate Feature Method, cut
-def hex_sketch(center, input_size, thickness):
-    # Get the root component of the active design.
-    ao = AppObjects()
-
-    gap = thickness / math.sqrt(3)
-    sides = 6
-    corner_function = pointy_hex_corner
-
-    spoke = (input_size / 2) - gap
-
-    # Create a new sketch on the xy plane.
-    sketches = ao.root_comp.sketches
-    xy_plane = ao.root_comp.xYConstructionPlane
-    sketch = sketches.add(xy_plane)
-    lines = sketch.sketchCurves.sketchLines
-
-    start_point = pointy_hex_corner(center, spoke, 0)
-
-    previous_point = start_point
-    first = True
-
-    for corner in range(1, sides):
-        new_point = corner_function(center, spoke, corner)
-        line = lines.addByTwoPoints(previous_point, new_point)
-        if first:
-            start_point = line.startSketchPoint
-            first = False
-        previous_point = line.endSketchPoint
-
-    lines.addByTwoPoints(previous_point, start_point)
-
-    # Get the profile defined by the circle.
-    prof = sketch.profiles.item(0)
-
-    return prof
-
-
 def start_sketch(z):
     ao = AppObjects()
     # Get construction planes
@@ -104,36 +42,17 @@ def circle_sketch(center, input_size, gap):
     return prof
 
 
-# Alternate Feature Method, cut
-def shape_sketch(center, input_size, gap, sides, corner_function):
-
-    spoke = (input_size / 2) - gap
-
-    sketch = start_sketch(center.z)
-    lines = sketch.sketchCurves.sketchLines
-
-    start_point = corner_function(center, spoke, 0)
-    previous_point = start_point
-    first = True
-
-    for corner in range(1, sides):
-        new_point = corner_function(center, spoke, corner)
-        line = lines.addByTwoPoints(previous_point, new_point)
-        if first:
-            start_point = line.startSketchPoint
-            first = False
-        previous_point = line.endSketchPoint
-
-    lines.addByTwoPoints(previous_point, start_point)
-
-    # Get the profile defined by the circle.
-    prof = sketch.profiles.item(0)
-
-    return prof
+# Defines points of a shape
+def pointy_shape_corner(center, size, i, offset, sides):
+    angle_deg = (360 / sides) * i - offset
+    angle_rad = math.pi / 180 * angle_deg
+    return adsk.core.Point3D.create(center.x + size * math.cos(angle_rad),
+                                    center.y + size * math.sin(angle_rad),
+                                    0)
 
 
-# Alternate Feature Method, cut
-def shape_sketch2(center, input_size, gap, sides, offset):
+# Generic Poly Shape
+def shape_sketch(center, input_size, gap, sides, offset):
 
     spoke = (input_size / 2) - gap
 
@@ -154,7 +73,7 @@ def shape_sketch2(center, input_size, gap, sides, offset):
 
     lines.addByTwoPoints(previous_point, start_point)
 
-    # Get the profile defined by the circle.
+    # Get the profile defined by the shape
     prof = sketch.profiles.item(0)
 
     return prof
@@ -192,28 +111,6 @@ def cut_pattern(extrude_collection, x_qty, d1_space, y_qty, d2_space):
     pattern_feature = ao.root_comp.features.rectangularPatternFeatures.add(pattern_input)
 
     return pattern_feature
-
-
-# Not Used
-def second_hex_body(size, hex_body, core_body, x_space, y_space):
-    ao = AppObjects()
-
-    copy_collection = adsk.core.ObjectCollection.create()
-    copy_collection.add(hex_body)
-
-    copy_body_feature = ao.root_comp.features.copyPasteBodies.add(copy_collection)
-    hex_body_2 = copy_body_feature.bodies[0]
-
-    move_collection = adsk.core.ObjectCollection.create()
-    move_collection.add(hex_body_2)
-
-    transform = adsk.core.Matrix3D.create()
-    transform.translation = adsk.core.Vector3D.create(x_space / 2, .75 * y_space, 0)
-
-    move_input = ao.root_comp.features.moveFeatures.createInput(move_collection, transform)
-    ao.root_comp.features.moveFeatures.add(move_input)
-
-    return hex_body_2
 
 
 def create_core_body(input_body, input_shell_thickness):
@@ -256,35 +153,18 @@ def create_core_body(input_body, input_shell_thickness):
     for body in offset_feature.bodies:
         remove_features.add(body)
 
-
     return core_body
 
 
-# Class for a Fusion 360 Command
-# Place your program logic here
-# Delete the line that says "pass" for any method you want to use
+# Class for the Fusion 360 Command
 class FillerCommand(Fusion360CommandBase):
-    # Run whenever a user makes any change to a value or selection in the addin UI
-    # Commands in here will be run through the Fusion processor and changes will be reflected in  Fusion graphics area
+
+    # TODO some simple graphic preview for scale / size reference
     def on_preview(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
         pass
 
-    # Run after the command is finished.
-    # Can be used to launch another command automatically or do other clean up.
-    def on_destroy(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, reason, input_values):
-        pass
-
-    # Run when any input is changed.
-    # Can be used to check a value and then update the add-in UI accordingly
-    def on_input_changed(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, changed_input,
-                         input_values):
-        pass
-
-    # Run when the user presses OK
-    # This is typically where your main program logic would go
+    # Run when command is executed
     def on_execute(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
-
-        # Get a reference to all relevant application objects in a dictionary
         ao = AppObjects()
 
         # Get the values from the user input
@@ -296,18 +176,17 @@ class FillerCommand(Fusion360CommandBase):
         all_selections = input_values['selection_input']
 
         start_body = adsk.fusion.BRepBody.cast(all_selections[0])
-        bounding_box = start_body.boundingBox
         start_volume = start_body.volume
-
         start_body_count = ao.design.rootComponent.bRepBodies.count
 
         if body_type == "Create Shell":
-            # Create Core Body of input body
+            # Create Core Body from input body by shelling it
             core_body = create_core_body(start_body, input_shell_thickness)
         else:
             core_body = start_body
 
-        # General bounding box and pattern
+        # General bounding box
+        bounding_box = start_body.boundingBox
         extent_vector = bounding_box.maxPoint.asVector()
         extent_vector.subtract(bounding_box.minPoint.asVector())
 
@@ -323,7 +202,6 @@ class FillerCommand(Fusion360CommandBase):
             gap = input_rib_thickness / math.sqrt(3)
             sides = 6
             offset = 30
-            corner_function = pointy_hex_corner
             x_space = math.sqrt(3) * input_size / 4
             y_space = 3 * input_size / 4
 
@@ -332,7 +210,6 @@ class FillerCommand(Fusion360CommandBase):
             gap = input_rib_thickness * math.sqrt(2) / 2
             sides = 4
             offset = 0
-            corner_function = pointy_square_corner
             x_space = input_size / 2
             y_space = input_size / 2
 
@@ -344,6 +221,7 @@ class FillerCommand(Fusion360CommandBase):
             x_space = input_size / 4
             y_space = math.sqrt(3) * input_size / 4
 
+        # Circle specific
         elif infill_type == "Circle":
             gap = input_rib_thickness / 2
             x_space = input_size / 2
@@ -352,24 +230,20 @@ class FillerCommand(Fusion360CommandBase):
         else:
             return
 
-        # TODO at center of volume
-        # cp_1 = adsk.core.Point3D.create(0, 0, 0)
         cp_1 = mid_vector.asPoint()
         cp_2 = adsk.core.Point3D.create(cp_1.x + x_space, cp_1.y + y_space, cp_1.z)
 
         if infill_type in ['Square', 'Hex']:
-
-            prof_1 = shape_sketch2(cp_1, input_size, gap, sides, offset)
-            prof_2 = shape_sketch2(cp_2, input_size, gap, sides, offset)
+            prof_1 = shape_sketch(cp_1, input_size, gap, sides, offset)
+            prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
 
         elif infill_type in ['Triangle']:
-
             cp_3 = adsk.core.Point3D.create(cp_1.x + input_size, cp_1.y, cp_1.z)
             cp_4 = adsk.core.Point3D.create(cp_1.x + (3 * x_space), cp_1.y + y_space, cp_1.z)
-            prof_1 = shape_sketch2(cp_1, input_size, gap, sides, 0)
-            prof_2 = shape_sketch2(cp_2, input_size, gap, sides, offset)
-            prof_3 = shape_sketch2(cp_3, input_size, gap, sides, offset)
-            prof_4 = shape_sketch2(cp_4, input_size, gap, sides, 0)
+            prof_1 = shape_sketch(cp_1, input_size, gap, sides, 0)
+            prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
+            prof_3 = shape_sketch(cp_3, input_size, gap, sides, offset)
+            prof_4 = shape_sketch(cp_4, input_size, gap, sides, 0)
 
         elif infill_type in ['Circle']:
             prof_1 = circle_sketch(cp_1, input_size, gap)
@@ -408,8 +282,6 @@ class FillerCommand(Fusion360CommandBase):
         cut_tools.add(extrude_1.bodies[0])
         cut_tools.add(extrude_2.bodies[0])
 
-        return
-
         body_count = ao.design.rootComponent.bRepBodies.count
         for count in range(body_count - (2 * x_qty_raw * y_qty_raw), body_count):
             cut_tools.add(ao.design.rootComponent.bRepBodies[count])
@@ -426,7 +298,7 @@ class FillerCommand(Fusion360CommandBase):
 
             body_count = ao.design.rootComponent.bRepBodies.count
             for count in range(start_body_count, body_count):
-                ao.ui.messageBox('here')
+                # ao.ui.messageBox('here')
                 final_combine_tools.add(ao.design.rootComponent.bRepBodies[count])
 
             # final_combine_tools.add(core_body)
