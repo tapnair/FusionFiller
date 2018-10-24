@@ -1,7 +1,7 @@
 # Fusion 360 Filler
 Create an infill pattern in a solid body
 
-![filler Cover](./resources/filler_hex.png)
+![filler Cover](./resources/filler_cover.png)
 
 
 # Installation
