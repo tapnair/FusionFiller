@@ -7,12 +7,13 @@ command_definitions = []
 
 # Define parameters for 1st command
 cmd = {
-    'cmd_name': 'Fusion Demo Command 1',
-    'cmd_description': 'Fusion Demo Command 1 Description',
+    'cmd_name': 'Solid Infill',
+    'cmd_description': 'Create infill of a solid part',
     'cmd_id': 'cmdID_FillerCommand',
     'cmd_resources': './resources',
     'workspace': 'FusionSolidEnvironment',
     'toolbar_panel_id': 'Filler',
+    'command_promoted': True,
     'class': FillerCommand
 }
 command_definitions.append(cmd)
