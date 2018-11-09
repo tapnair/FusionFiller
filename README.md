@@ -5,7 +5,7 @@ Create an infill pattern in a solid body
 
 
 # Installation
-[Click here to download the Add-in](https://github.com/tapnair/ventMaker/archive/master.zip)
+[Click here to download the Add-in](https://github.com/tapnair/FusionFiller/archive/master.zip)
 
 
 After downloading the zip file follow the [installation instructions here](https://tapnair.github.io/installation.html) for your particular OS version of Fusion 360
