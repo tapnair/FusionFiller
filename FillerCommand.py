@@ -113,8 +113,10 @@ def cut_pattern(extrude_collection, x_qty, d1_space, y_qty, d2_space):
     return pattern_feature
 
 
-def create_core_body(input_body, input_shell_thickness):
+def create_core_body_new(input_body, input_shell_thickness):
     ao = AppObjects()
+
+    core_body = input_body.copyToComponent(input_body.parentComponent)
 
     # Shell Main body
     shell_features = ao.root_comp.features.shellFeatures
@@ -124,36 +126,84 @@ def create_core_body(input_body, input_shell_thickness):
     shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
     shell_feature = shell_features.add(shell_input)
 
-    # Offset internal faces 0
-    shell_faces = shell_feature.faces
-    tools = adsk.core.ObjectCollection.create()
-    for face in shell_faces:
-        tools.add(face)
-    distance = adsk.core.ValueInput.createByReal(0)
-    offset_features = ao.root_comp.features.offsetFeatures
-    offset_input = offset_features.createInput(tools, distance,
-                                               adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    offset_feature = offset_features.add(offset_input)
+    adsk.terminate()
 
-    # Boundary FIll
-    offset_tools = adsk.core.ObjectCollection.create()
-    for body in offset_feature.bodies:
-        offset_tools.add(body)
-
-    boundary_fills = ao.root_comp.features.boundaryFillFeatures
-    boundary_fill_input = boundary_fills.createInput(offset_tools,
-                                                     adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    cell = boundary_fill_input.bRepCells.item(0)
-    cell.isSelected = True
-    boundary_fill = boundary_fills.add(boundary_fill_input)
-    core_body = boundary_fill.bodies[0]
-
-    # Remove extra surface
-    remove_features = ao.root_comp.features.removeFeatures
-    for body in offset_feature.bodies:
-        remove_features.add(body)
+    # # Offset internal faces 0
+    # shell_faces = shell_feature.faces
+    # tools = adsk.core.ObjectCollection.create()
+    # for face in shell_faces:
+    #     tools.add(face)
+    # distance = adsk.core.ValueInput.createByReal(-0.5 * input_shell_thickness)
+    # offset_features = ao.root_comp.features.offsetFeatures
+    # offset_input = offset_features.createInput(tools, distance,
+    #                                            adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    # offset_feature = offset_features.add(offset_input)
+    #
+    # # Boundary FIll
+    # offset_tools = adsk.core.ObjectCollection.create()
+    # for body in offset_feature.bodies:
+    #     offset_tools.add(body)
+    #
+    # boundary_fills = ao.root_comp.features.boundaryFillFeatures
+    # boundary_fill_input = boundary_fills.createInput(offset_tools,
+    #                                                  adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    # cell = boundary_fill_input.bRepCells.item(0)
+    # cell.isSelected = True
+    # boundary_fill = boundary_fills.add(boundary_fill_input)
+    # core_body = boundary_fill.bodies[0]
+    #
+    # # Remove extra surface
+    # remove_features = ao.root_comp.features.removeFeatures
+    # for body in offset_feature.bodies:
+    #     remove_features.add(body)
 
     return core_body
+
+
+def create_core_body(input_body, input_shell_thickness):
+    ao = AppObjects()
+
+    core_body_new = input_body.copyToComponent(input_body.parentComponent)
+
+    # Shell Main body
+    shell_features = ao.root_comp.features.shellFeatures
+    input_collection = adsk.core.ObjectCollection.create()
+    input_collection.add(input_body)
+    shell_input = shell_features.createInput(input_collection)
+    shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
+    shell_feature = shell_features.add(shell_input)
+
+    # # Offset internal faces 0
+    # shell_faces = shell_feature.faces
+    # tools = adsk.core.ObjectCollection.create()
+    # for face in shell_faces:
+    #     tools.add(face)
+    # distance = adsk.core.ValueInput.createByReal(-1.0 * input_shell_thickness)
+    # offset_features = ao.root_comp.features.offsetFeatures
+    # offset_input = offset_features.createInput(tools, distance,
+    #                                            adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    # offset_feature = offset_features.add(offset_input)
+    #
+    # # Boundary FIll
+    # offset_tools = adsk.core.ObjectCollection.create()
+    # for body in offset_feature.bodies:
+    #     offset_tools.add(body)
+    #
+    # boundary_fills = ao.root_comp.features.boundaryFillFeatures
+    # boundary_fill_input = boundary_fills.createInput(offset_tools,
+    #                                                  adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+    # cell = boundary_fill_input.bRepCells.item(0)
+    # cell.isSelected = True
+    # boundary_fill = boundary_fills.add(boundary_fill_input)
+    # core_body = boundary_fill.bodies[0]
+    #
+    # # Remove extra surface
+    # remove_features = ao.root_comp.features.removeFeatures
+    # for body in offset_feature.bodies:
+    #     remove_features.add(body)
+
+    return core_body_new
+    # return core_body
 
 
 # Class for the Fusion 360 Command
