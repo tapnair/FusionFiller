@@ -2,8 +2,15 @@ import adsk.core
 import adsk.fusion
 import adsk.cam
 import traceback
+import uuid
 
 from typing import Optional, List
+
+import os
+from os.path import expanduser
+import json
+
+import time
 
 
 # Class to quickly access Fusion Application Objects
@@ -318,3 +325,113 @@ def combine_feature(target_body: adsk.fusion.BRepBody, tool_bodies: List[adsk.fu
     combine_input = combine_features.createInput(target_body, combine_tools)
     combine_input.operation = operation
     combine_features.add(combine_input)
+
+
+# Get default directory
+def get_default_dir(app_name):
+
+    # Get user's home directory
+    default_dir = expanduser("~")
+
+    # Create a subdirectory for this application settings
+    default_dir = os.path.join(default_dir, app_name, "")
+
+    # Create the folder if it does not exist
+    if not os.path.exists(default_dir):
+        os.makedirs(default_dir)
+
+    return default_dir
+
+
+def get_settings_file(app_name):
+    default_dir = get_default_dir(app_name)
+    file_name = os.path.join(default_dir, ".settings.json")
+    return file_name
+
+
+# Write App Settings
+def write_settings(app_name, settings):
+
+    settings_text = json.dumps(settings)
+    file_name = get_settings_file(app_name)
+
+    f = open(file_name, "w")
+    f.write(settings_text)
+    f.close()
+
+
+# Read App Settings
+def read_settings(app_name):
+    file_name = get_settings_file(app_name)
+    if os.path.exists(file_name):
+        with open(file_name) as f:
+            try:
+                settings = json.load(f)
+            except:
+                settings = {}
+    else:
+        settings = {}
+
+    return settings
+
+
+# Creates directory and returns file name for log file
+def get_log_file_name(app_name):
+    default_dir = get_default_dir(app_name)
+
+    log_dir = os.path.join(default_dir, "logs", "")
+
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    time_stamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.gmtime())
+
+    # Create file name in this path
+    log_file_name = app_name + '-Log-' + time_stamp + '.txt'
+
+    file_name = os.path.join(log_dir, log_file_name)
+
+    return file_name
+
+
+def open_doc(data_file):
+    app = adsk.core.Application.get()
+
+    try:
+        document = app.documents.open(data_file, True)
+        if document is not None:
+            document.activate()
+    except:
+        pass
+
+
+# get a UUID - URL safe, Base64
+def get_a_uuid():
+    r_uuid = str(uuid.uuid4())
+    return r_uuid
+
+
+def item_id(item, app_name):
+    this_id = None
+    if item.attributes is not None:
+        if item.attributes.itemByName(app_name, "id") is not None:
+            this_id = item.attributes.itemByName(app_name, "id").value
+        else:
+            new_id = get_a_uuid()
+            item.attributes.add(app_name, "id", new_id)
+            this_id = new_id
+
+    return this_id
+
+
+def create_progress_bar():
+    ao = AppObjects()
+
+    # Set styles of progress dialog.
+    progressDialog = ao.ui.createProgressDialog()
+    progressDialog.cancelButtonText = 'Cancel'
+    progressDialog.isBackgroundTranslucent = False
+    progressDialog.isCancelButtonShown = True
+
+    # Show dialog
+    progressDialog.show('Progress Dialog', 'Percentage: %p, Current Value: %v, Total steps: %m', 0, 50, 1)

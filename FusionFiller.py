@@ -1,9 +1,10 @@
 # Importing sample Fusion Command
 # Could import multiple Command definitions here
-from .FillerCommand import FillerCommand
+from .FillerCommand import FillerCommand, FillerUpdateCommand
 
 commands = []
 command_definitions = []
+
 
 # Define parameters for 1st command
 cmd = {
@@ -14,7 +15,23 @@ cmd = {
     'workspace': 'FusionSolidEnvironment',
     'toolbar_panel_id': 'Filler',
     'command_promoted': True,
-    'class': FillerCommand
+    'class': FillerCommand,
+    'app_name': "FusionFiller"
+}
+command_definitions.append(cmd)
+
+
+# Define parameters for 1st command
+cmd = {
+    'cmd_name': 'Update Filler Features',
+    'cmd_description': 'Update any out of date Filler Features in the timeline',
+    'cmd_id': 'cmdID_FillerUpdateCommand',
+    'cmd_resources': './resources',
+    'workspace': 'FusionSolidEnvironment',
+    'toolbar_panel_id': 'Filler',
+    'command_promoted': True,
+    'class': FillerUpdateCommand,
+    'app_name': "FusionFiller"
 }
 command_definitions.append(cmd)
 

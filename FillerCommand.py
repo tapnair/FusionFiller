@@ -3,9 +3,10 @@ import adsk.fusion
 import traceback
 import math
 import collections
+import json
 
 from adsk.fusion import BRepFaces
-from .Fusion360Utilities.Fusion360Utilities import AppObjects, combine_feature
+from .Fusion360Utilities.Fusion360Utilities import AppObjects, combine_feature, item_id
 from .Fusion360Utilities.Fusion360CommandBase import Fusion360CommandBase
 
 
@@ -90,120 +91,201 @@ def shape_extrude(prof, height):
     return extrude_feature
 
 
-# Generic pattern in X Y Directions
-def cut_pattern(extrude_collection, x_qty, d1_space, y_qty, d2_space):
+# def make_fill(infill_type, body_type, input_size, input_shell_thickness, input_rib_thickness, start_body):
+def make_fill(feature_def, start_body: adsk.fusion.BRepBody, app_name):
 
     ao = AppObjects()
-    pattern_features = ao.root_comp.features.rectangularPatternFeatures
 
-    x_axis = ao.root_comp.xConstructionAxis
-    y_axis = ao.root_comp.yConstructionAxis
+    infill_type = feature_def['infill_type']
+    body_type = feature_def['body_type']
+    input_size = feature_def['input_size']
+    input_shell_thickness = feature_def['input_shell_thickness']
+    input_rib_thickness = feature_def['input_rib_thickness']
 
-    pattern_type = adsk.fusion.PatternDistanceType.SpacingPatternDistanceType
+    # Set styles of progress dialog.
+    progressDialog = ao.ui.createProgressDialog()
+    progressDialog.cancelButtonText = 'Cancel'
+    progressDialog.isBackgroundTranslucent = False
+    progressDialog.isCancelButtonShown = True
 
-    pattern_input = pattern_features.createInput(extrude_collection, x_axis, x_qty, d1_space, pattern_type)
-    pattern_input.directionTwoEntity = y_axis
-    pattern_input.distanceTwo = d2_space
-    pattern_input.quantityTwo = y_qty
-    pattern_input.isSymmetricInDirectionOne = True
-    pattern_input.isSymmetricInDirectionTwo = True
+    base_feature = ao.root_comp.features.baseFeatures.add()
 
-    pattern_feature = ao.root_comp.features.rectangularPatternFeatures.add(pattern_input)
+    base_feature.startEdit()
 
-    return pattern_feature
+    # General bounding box
+    bounding_box = start_body.boundingBox
+    extent_vector = bounding_box.maxPoint.asVector()
+    extent_vector.subtract(bounding_box.minPoint.asVector())
 
+    mid_vector = extent_vector.copy()
+    mid_vector.scaleBy(.5)
+    mid_vector.add(bounding_box.minPoint.asVector())
 
-def create_core_body_new(input_body, input_shell_thickness):
-    ao = AppObjects()
+    height_raw = extent_vector.z * 1.1
+    height = adsk.core.ValueInput.createByReal(height_raw)
 
-    core_body = input_body.copyToComponent(input_body.parentComponent)
+    # Hex specific
+    if infill_type == "Hex":
+        gap = input_rib_thickness / math.sqrt(3)
+        sides = 6
+        offset = 30
+        x_space = math.sqrt(3) * input_size / 4
+        y_space = 3 * input_size / 4
 
-    # Shell Main body
-    shell_features = ao.root_comp.features.shellFeatures
-    input_collection = adsk.core.ObjectCollection.create()
-    input_collection.add(input_body)
-    shell_input = shell_features.createInput(input_collection)
-    shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
-    shell_feature = shell_features.add(shell_input)
+    # Square specific
+    elif infill_type == "Square":
+        gap = input_rib_thickness * math.sqrt(2) / 2
+        sides = 4
+        offset = 0
+        x_space = input_size / 2
+        y_space = input_size / 2
 
-    adsk.terminate()
+    # Triangle specific
+    elif infill_type == "Triangle":
+        gap = input_rib_thickness
+        sides = 3
+        offset = 60
+        x_space = input_size / 4
+        y_space = math.sqrt(3) * input_size / 4
 
-    # # Offset internal faces 0
-    # shell_faces = shell_feature.faces
-    # tools = adsk.core.ObjectCollection.create()
-    # for face in shell_faces:
-    #     tools.add(face)
-    # distance = adsk.core.ValueInput.createByReal(-0.5 * input_shell_thickness)
-    # offset_features = ao.root_comp.features.offsetFeatures
-    # offset_input = offset_features.createInput(tools, distance,
-    #                                            adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    # offset_feature = offset_features.add(offset_input)
-    #
-    # # Boundary FIll
-    # offset_tools = adsk.core.ObjectCollection.create()
-    # for body in offset_feature.bodies:
-    #     offset_tools.add(body)
-    #
-    # boundary_fills = ao.root_comp.features.boundaryFillFeatures
-    # boundary_fill_input = boundary_fills.createInput(offset_tools,
-    #                                                  adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    # cell = boundary_fill_input.bRepCells.item(0)
-    # cell.isSelected = True
-    # boundary_fill = boundary_fills.add(boundary_fill_input)
-    # core_body = boundary_fill.bodies[0]
-    #
-    # # Remove extra surface
-    # remove_features = ao.root_comp.features.removeFeatures
-    # for body in offset_feature.bodies:
-    #     remove_features.add(body)
+    # Circle specific
+    elif infill_type == "Circle":
+        gap = input_rib_thickness / 2
+        x_space = input_size / 2
+        y_space = math.sqrt(3) * input_size / 2
 
-    return core_body
+    else:
+        return
 
+    cp_1 = mid_vector.asPoint()
+    cp_2 = adsk.core.Point3D.create(cp_1.x + x_space, cp_1.y + y_space, cp_1.z)
 
-def create_core_body(input_body, input_shell_thickness):
-    ao = AppObjects()
+    if infill_type in ['Square', 'Hex']:
+        prof_1 = shape_sketch(cp_1, input_size, gap, sides, offset)
+        prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
 
-    core_body_new = input_body.copyToComponent(input_body.parentComponent)
+    elif infill_type in ['Triangle']:
+        cp_3 = adsk.core.Point3D.create(cp_1.x + input_size, cp_1.y, cp_1.z)
+        cp_4 = adsk.core.Point3D.create(cp_1.x + (3 * x_space), cp_1.y + y_space, cp_1.z)
+        prof_1 = shape_sketch(cp_1, input_size, gap, sides, 0)
+        prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
+        prof_3 = shape_sketch(cp_3, input_size, gap, sides, offset)
+        prof_4 = shape_sketch(cp_4, input_size, gap, sides, 0)
 
-    # Shell Main body
-    shell_features = ao.root_comp.features.shellFeatures
-    input_collection = adsk.core.ObjectCollection.create()
-    input_collection.add(input_body)
-    shell_input = shell_features.createInput(input_collection)
-    shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
-    shell_feature = shell_features.add(shell_input)
+    elif infill_type in ['Circle']:
+        prof_1 = circle_sketch(cp_1, input_size, gap)
+        prof_2 = circle_sketch(cp_2, input_size, gap)
+    else:
+        return
 
-    # # Offset internal faces 0
-    # shell_faces = shell_feature.faces
-    # tools = adsk.core.ObjectCollection.create()
-    # for face in shell_faces:
-    #     tools.add(face)
-    # distance = adsk.core.ValueInput.createByReal(-1.0 * input_shell_thickness)
-    # offset_features = ao.root_comp.features.offsetFeatures
-    # offset_input = offset_features.createInput(tools, distance,
-    #                                            adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    # offset_feature = offset_features.add(offset_input)
-    #
-    # # Boundary FIll
-    # offset_tools = adsk.core.ObjectCollection.create()
-    # for body in offset_feature.bodies:
-    #     offset_tools.add(body)
-    #
-    # boundary_fills = ao.root_comp.features.boundaryFillFeatures
-    # boundary_fill_input = boundary_fills.createInput(offset_tools,
-    #                                                  adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
-    # cell = boundary_fill_input.bRepCells.item(0)
-    # cell.isSelected = True
-    # boundary_fill = boundary_fills.add(boundary_fill_input)
-    # core_body = boundary_fill.bodies[0]
-    #
-    # # Remove extra surface
-    # remove_features = ao.root_comp.features.removeFeatures
-    # for body in offset_feature.bodies:
-    #     remove_features.add(body)
+    d1_space = adsk.core.ValueInput.createByReal(x_space * 2)
+    d2_space = adsk.core.ValueInput.createByReal(y_space * 2)
 
-    return core_body_new
-    # return core_body
+    x_qty_raw = math.ceil(extent_vector.x / d1_space.realValue) + 4
+    y_qty_raw = math.ceil(extent_vector.y / d2_space.realValue) + 4
+
+    x_qty = adsk.core.ValueInput.createByReal(x_qty_raw)
+    y_qty = adsk.core.ValueInput.createByReal(y_qty_raw)
+
+    extrude_cut_collection = []
+    extrude_1 = shape_extrude(prof_1, height)
+    extrude_2 = shape_extrude(prof_2, height)
+
+    extrude_cut_collection.append(extrude_1.bodies[0])
+    extrude_cut_collection.append(extrude_2.bodies[0])
+
+    if infill_type in ['Triangle']:
+        d1_space = adsk.core.ValueInput.createByReal(3 * input_size / 2)
+        x_qty = adsk.core.ValueInput.createByReal(x_qty_raw / 2)
+
+        extrude_3 = shape_extrude(prof_3, height)
+        extrude_4 = shape_extrude(prof_4, height)
+        extrude_cut_collection.append(extrude_3.bodies[0])
+        extrude_cut_collection.append(extrude_4.bodies[0])
+
+    tbm = adsk.fusion.TemporaryBRepManager.get()
+
+    trans_core = tbm.copy(start_body)
+
+    pattern_list = []
+
+    for body in extrude_cut_collection:
+        trans = tbm.copy(body)
+        pattern_list.append(trans)
+        body.deleteMe()
+
+    # Show dialog
+    iterations = int(x_qty.realValue * y_qty.realValue * 4 * len(pattern_list))
+    i = 0
+    progressDialog.title = 'Fusion Filler'
+    progressDialog.message = '  Completed %v of %m Steps  '
+    progressDialog.minimumValue = 0
+    progressDialog.maximumValue = iterations
+    # progressDialog.show('Computing Features:  ', 'Percentage: %p, Current step %v of %m', 0, iterations, 1)
+
+    for x_int in range(int(x_qty.realValue) * 2):
+
+        x_val = x_int * d1_space.realValue - x_qty.realValue * d1_space.realValue
+
+        for y_int in range(int(y_qty.realValue) * 2):
+            y_val = y_int * d2_space.realValue - y_qty.realValue * d2_space.realValue
+
+            trans_matrix = adsk.core.Matrix3D.create()
+            trans_matrix.translation = adsk.core.Vector3D.create(x_val, y_val, 0)
+            for body in pattern_list:
+                trans_tool = tbm.copy(body)
+                tbm.transform(trans_tool, trans_matrix)
+                tbm.booleanOperation(trans_core, trans_tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
+                # If progress dialog is cancelled, stop drawing.
+                if progressDialog.wasCancelled:
+                    return
+                i += 1
+            progressDialog.progressValue = i
+
+    # ao.ui.messageBox("volume:   " + str(trans_core.volume))
+    progressDialog.message = '  Finishing Up  '
+
+    if body_type == "Create Shell":
+        # Shell Main body
+        # ao.root_comp.bRepBodies.add(trans_core, base_feature)
+        base_feature.finishEdit()
+
+        shell_features = ao.root_comp.features.shellFeatures
+        input_collection = adsk.core.ObjectCollection.create()
+        input_collection.add(start_body)
+        shell_input = shell_features.createInput(input_collection)
+        shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
+        shell_feature = shell_features.add(shell_input)
+
+        trans_shell = tbm.copy(start_body)
+
+        # start_body.deleteMe()
+        shell_feature.deleteMe()
+
+        base_feature.startEdit()
+
+        tbm.booleanOperation(trans_shell, trans_core, adsk.fusion.BooleanTypes.UnionBooleanType)
+
+        new_body = ao.root_comp.bRepBodies.add(trans_shell, base_feature)
+    else:
+        new_body = ao.root_comp.bRepBodies.add(trans_core, base_feature)
+
+    base_feature.finishEdit()
+    filler_feature_id = item_id(base_feature, app_name)
+    new_body_id = item_id(new_body, app_name)
+    feature_def = {
+        "infill_type": infill_type,
+        "body_type": body_type,
+        "input_size": input_size,
+        "input_shell_thickness": input_shell_thickness,
+        "input_rib_thickness": input_rib_thickness,
+        "new_body_id": new_body_id,
+        "filler_feature_id": filler_feature_id,
+        "start_body_id": item_id(start_body, app_name),
+        "revisionId": new_body.revisionId
+    }
+
+    base_feature.attributes.add(app_name, "feature_def", json.dumps(feature_def))
 
 
 # Class for the Fusion 360 Command
@@ -229,159 +311,23 @@ class FillerCommand(Fusion360CommandBase):
         start_volume = start_body.volume
         start_body_count = ao.design.rootComponent.bRepBodies.count
 
-        base_feature = ao.root_comp.features.baseFeatures.add()
+        start_body_id = item_id(start_body, self.app_name)
 
-        base_feature.startEdit()
+        feature_def = {
+            "infill_type": infill_type,
+            "body_type": body_type,
+            "input_size": input_size,
+            "input_shell_thickness": input_shell_thickness,
+            "input_rib_thickness": input_rib_thickness,
+            "start_body_id": start_body_id,
+        }
 
-        # General bounding box
-        bounding_box = start_body.boundingBox
-        extent_vector = bounding_box.maxPoint.asVector()
-        extent_vector.subtract(bounding_box.minPoint.asVector())
+        make_fill(feature_def, start_body, self.app_name)
 
-        mid_vector = extent_vector.copy()
-        mid_vector.scaleBy(.5)
-        mid_vector.add(bounding_box.minPoint.asVector())
-
-        height_raw = extent_vector.z * 1.1
-        height = adsk.core.ValueInput.createByReal(height_raw)
-
-        # Hex specific
-        if infill_type == "Hex":
-            gap = input_rib_thickness / math.sqrt(3)
-            sides = 6
-            offset = 30
-            x_space = math.sqrt(3) * input_size / 4
-            y_space = 3 * input_size / 4
-
-        # Square specific
-        elif infill_type == "Square":
-            gap = input_rib_thickness * math.sqrt(2) / 2
-            sides = 4
-            offset = 0
-            x_space = input_size / 2
-            y_space = input_size / 2
-
-        # Triangle specific
-        elif infill_type == "Triangle":
-            gap = input_rib_thickness
-            sides = 3
-            offset = 60
-            x_space = input_size / 4
-            y_space = math.sqrt(3) * input_size / 4
-
-        # Circle specific
-        elif infill_type == "Circle":
-            gap = input_rib_thickness / 2
-            x_space = input_size / 2
-            y_space = math.sqrt(3) * input_size / 2
-
-        else:
-            return
-
-        cp_1 = mid_vector.asPoint()
-        cp_2 = adsk.core.Point3D.create(cp_1.x + x_space, cp_1.y + y_space, cp_1.z)
-
-        if infill_type in ['Square', 'Hex']:
-            prof_1 = shape_sketch(cp_1, input_size, gap, sides, offset)
-            prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
-
-        elif infill_type in ['Triangle']:
-            cp_3 = adsk.core.Point3D.create(cp_1.x + input_size, cp_1.y, cp_1.z)
-            cp_4 = adsk.core.Point3D.create(cp_1.x + (3 * x_space), cp_1.y + y_space, cp_1.z)
-            prof_1 = shape_sketch(cp_1, input_size, gap, sides, 0)
-            prof_2 = shape_sketch(cp_2, input_size, gap, sides, offset)
-            prof_3 = shape_sketch(cp_3, input_size, gap, sides, offset)
-            prof_4 = shape_sketch(cp_4, input_size, gap, sides, 0)
-
-        elif infill_type in ['Circle']:
-            prof_1 = circle_sketch(cp_1, input_size, gap)
-            prof_2 = circle_sketch(cp_2, input_size, gap)
-        else:
-            return
-
-        d1_space = adsk.core.ValueInput.createByReal(x_space * 2)
-        d2_space = adsk.core.ValueInput.createByReal(y_space * 2)
-
-        x_qty_raw = math.ceil(extent_vector.x / d1_space.realValue) + 4
-        y_qty_raw = math.ceil(extent_vector.y / d2_space.realValue) + 4
-
-        x_qty = adsk.core.ValueInput.createByReal(x_qty_raw)
-        y_qty = adsk.core.ValueInput.createByReal(y_qty_raw)
-
-        extrude_cut_collection = []
-        extrude_1 = shape_extrude(prof_1, height)
-        extrude_2 = shape_extrude(prof_2, height)
-
-        extrude_cut_collection.append(extrude_1.bodies[0])
-        extrude_cut_collection.append(extrude_2.bodies[0])
-
-        if infill_type in ['Triangle']:
-            d1_space = adsk.core.ValueInput.createByReal(3 * input_size / 2)
-            x_qty = adsk.core.ValueInput.createByReal(x_qty_raw / 2)
-
-            extrude_3 = shape_extrude(prof_3, height)
-            extrude_4 = shape_extrude(prof_4, height)
-            extrude_cut_collection.append(extrude_3.bodies[0])
-            extrude_cut_collection.append(extrude_4.bodies[0])
-
-        tbm = adsk.fusion.TemporaryBRepManager.get()
-
-        trans_core = tbm.copy(start_body)
-
-        pattern_list = []
-
-        for body in extrude_cut_collection:
-            trans = tbm.copy(body)
-            pattern_list.append(trans)
-            body.deleteMe()
-
-        for x_int in range(int(x_qty.realValue) * 2):
-
-            x_val = x_int * d1_space.realValue - x_qty.realValue * d1_space.realValue
-
-            for y_int in range(int(y_qty.realValue) * 2):
-                y_val = y_int * d2_space.realValue - y_qty.realValue * d2_space.realValue
-
-                trans_matrix = adsk.core.Matrix3D.create()
-                trans_matrix.translation = adsk.core.Vector3D.create(x_val, y_val, 0)
-                for body in pattern_list:
-                    trans_tool = tbm.copy(body)
-                    tbm.transform(trans_tool, trans_matrix)
-                    tbm.booleanOperation(trans_core, trans_tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
-
-        # ao.ui.messageBox("volume:   " + str(trans_core.volume))
-
-        if body_type == "Create Shell":
-            # Shell Main body
-            # ao.root_comp.bRepBodies.add(trans_core, base_feature)
-            base_feature.finishEdit()
-
-            shell_features = ao.root_comp.features.shellFeatures
-            input_collection = adsk.core.ObjectCollection.create()
-            input_collection.add(start_body)
-            shell_input = shell_features.createInput(input_collection)
-            shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
-            shell_feature = shell_features.add(shell_input)
-
-            trans_shell = tbm.copy(start_body)
-
-            # start_body.deleteMe()
-            # shell_feature.deleteMe()
-
-            base_feature.startEdit()
-
-            tbm.booleanOperation(trans_shell, trans_core, adsk.fusion.BooleanTypes.UnionBooleanType)
-
-            ao.root_comp.bRepBodies.add(trans_shell, base_feature)
-        else:
-            ao.root_comp.bRepBodies.add(trans_core, base_feature)
-
-        base_feature.finishEdit()
-
-        final_volume = start_body.volume
-        ao.ui.messageBox(
-            'The final percentage infill is:  {0:.2g}% \n'.format(100 * final_volume / start_volume)
-        )
+        # final_volume = start_body.volume
+        # ao.ui.messageBox(
+        #     'The final percentage infill is:  {0:.2g}% \n'.format(100 * final_volume / start_volume)
+        # )
 
     # Run when the user selects your command icon from the Fusion 360 UI
     # Typically used to create and display a command dialog box
@@ -421,3 +367,46 @@ class FillerCommand(Fusion360CommandBase):
         radio.listItems.add("Create Shell", True)
         radio.listItems.add("Direct Cut", False)
 
+
+# Class for the Fusion 360 Command
+class FillerUpdateCommand(Fusion360CommandBase):
+
+    # TODO some simple graphic preview for scale / size reference
+    def on_preview(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
+        pass
+
+    # Run when command is executed
+    def on_execute(self, command: adsk.core.Command, inputs: adsk.core.CommandInputs, args, input_values):
+
+        ao = AppObjects()
+        attributes = ao.design.findAttributes(self.app_name, "feature_def")
+
+        # feature_def = {
+        #     "infill_type": infill_type,
+        #     "body_type": body_type,
+        #     "input_size": input_size,
+        #     "input_shell_thickness": input_shell_thickness,
+        #     "input_rib_thickness": input_rib_thickness,
+        #     "new_body_id": body_target_id,
+        #     "filler_feature_id": filler_feature_id,
+        #     "start_body_id": item_id(start_body, app_name),
+        #     "revisionId": new_body.revisionId
+        # }
+
+        for attribute in attributes:
+            feature_def = json.loads(attribute.value)
+
+            base_feature = attribute.parent
+            new_body = base_feature.bodies.item(0)
+
+            if new_body.revisionId != feature_def["revisionId"]:
+                base_feature.timelineObject.rollTo(False)
+                base_feature.deleteMe()
+
+                attributes = ao.design.findAttributes(self.app_name, "id")
+
+                for attribute in attributes:
+                    if attribute.value == feature_def["start_body_id"]:
+                        start_body = attribute.parent
+
+                make_fill(feature_def, start_body, self.app_name)
