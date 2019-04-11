@@ -229,11 +229,9 @@ class FillerCommand(Fusion360CommandBase):
         start_volume = start_body.volume
         start_body_count = ao.design.rootComponent.bRepBodies.count
 
-        if body_type == "Create Shell":
-            # Create Core Body from input body by shelling it
-            core_body = create_core_body(start_body, input_shell_thickness)
-        else:
-            core_body = start_body
+        base_feature = ao.root_comp.features.baseFeatures.add()
+
+        base_feature.startEdit()
 
         # General bounding box
         bounding_box = start_body.boundingBox
@@ -310,12 +308,12 @@ class FillerCommand(Fusion360CommandBase):
         x_qty = adsk.core.ValueInput.createByReal(x_qty_raw)
         y_qty = adsk.core.ValueInput.createByReal(y_qty_raw)
 
-        extrude_cut_collection = adsk.core.ObjectCollection.create()
+        extrude_cut_collection = []
         extrude_1 = shape_extrude(prof_1, height)
         extrude_2 = shape_extrude(prof_2, height)
 
-        extrude_cut_collection.add(extrude_1.bodies[0])
-        extrude_cut_collection.add(extrude_2.bodies[0])
+        extrude_cut_collection.append(extrude_1.bodies[0])
+        extrude_cut_collection.append(extrude_2.bodies[0])
 
         if infill_type in ['Triangle']:
             d1_space = adsk.core.ValueInput.createByReal(3 * input_size / 2)
@@ -323,41 +321,62 @@ class FillerCommand(Fusion360CommandBase):
 
             extrude_3 = shape_extrude(prof_3, height)
             extrude_4 = shape_extrude(prof_4, height)
-            extrude_cut_collection.add(extrude_3.bodies[0])
-            extrude_cut_collection.add(extrude_4.bodies[0])
+            extrude_cut_collection.append(extrude_3.bodies[0])
+            extrude_cut_collection.append(extrude_4.bodies[0])
 
-        cut_pattern(extrude_cut_collection, x_qty, d1_space, y_qty, d2_space)
+        tbm = adsk.fusion.TemporaryBRepManager.get()
 
-        cut_tools = adsk.core.ObjectCollection.create()
-        cut_tools.add(extrude_1.bodies[0])
-        cut_tools.add(extrude_2.bodies[0])
+        trans_core = tbm.copy(start_body)
 
-        body_count = ao.design.rootComponent.bRepBodies.count
-        for count in range(body_count - (2 * x_qty_raw * y_qty_raw), body_count):
-            cut_tools.add(ao.design.rootComponent.bRepBodies[count])
+        pattern_list = []
 
-        combine_features = ao.root_comp.features.combineFeatures
+        for body in extrude_cut_collection:
+            trans = tbm.copy(body)
+            pattern_list.append(trans)
+            body.deleteMe()
 
-        cut_combine_input = combine_features.createInput(core_body, cut_tools)
-        cut_combine_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
-        combine_features.add(cut_combine_input)
+        for x_int in range(int(x_qty.realValue) * 2):
+
+            x_val = x_int * d1_space.realValue - x_qty.realValue * d1_space.realValue
+
+            for y_int in range(int(y_qty.realValue) * 2):
+                y_val = y_int * d2_space.realValue - y_qty.realValue * d2_space.realValue
+
+                trans_matrix = adsk.core.Matrix3D.create()
+                trans_matrix.translation = adsk.core.Vector3D.create(x_val, y_val, 0)
+                for body in pattern_list:
+                    trans_tool = tbm.copy(body)
+                    tbm.transform(trans_tool, trans_matrix)
+                    tbm.booleanOperation(trans_core, trans_tool, adsk.fusion.BooleanTypes.DifferenceBooleanType)
+
+        # ao.ui.messageBox("volume:   " + str(trans_core.volume))
 
         if body_type == "Create Shell":
+            # Shell Main body
+            # ao.root_comp.bRepBodies.add(trans_core, base_feature)
+            base_feature.finishEdit()
 
-            final_combine_tools = adsk.core.ObjectCollection.create()
+            shell_features = ao.root_comp.features.shellFeatures
+            input_collection = adsk.core.ObjectCollection.create()
+            input_collection.add(start_body)
+            shell_input = shell_features.createInput(input_collection)
+            shell_input.insideThickness = adsk.core.ValueInput.createByReal(input_shell_thickness)
+            shell_feature = shell_features.add(shell_input)
 
-            body_count = ao.design.rootComponent.bRepBodies.count
-            for count in range(start_body_count, body_count):
-                # ao.ui.messageBox('here')
-                final_combine_tools.add(ao.design.rootComponent.bRepBodies[count])
+            trans_shell = tbm.copy(start_body)
 
-            # final_combine_tools.add(core_body)
-            final_combine_input = combine_features.createInput(start_body, final_combine_tools)
-            final_combine_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
-            combine_features.add(final_combine_input)
+            # start_body.deleteMe()
+            # shell_feature.deleteMe()
 
+            base_feature.startEdit()
+
+            tbm.booleanOperation(trans_shell, trans_core, adsk.fusion.BooleanTypes.UnionBooleanType)
+
+            ao.root_comp.bRepBodies.add(trans_shell, base_feature)
         else:
-            pass
+            ao.root_comp.bRepBodies.add(trans_core, base_feature)
+
+        base_feature.finishEdit()
 
         final_volume = start_body.volume
         ao.ui.messageBox(
