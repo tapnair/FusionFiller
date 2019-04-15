@@ -13,7 +13,7 @@ After downloading the zip file follow the [installation instructions here](https
 
 # Usage
 
-Documentation to come later. For now:
+### Solid Infill:
  - Select a Body in which to create infill
  - You can select a body and create an outer shell thickness plus infill.  This is most common.
  - Alternatively (for more complex geometry) you can manually create the "interior" body and then simply generate the infill pattern in this body.
@@ -35,6 +35,10 @@ Documentation to come later. For now:
 
    ![filler Circles](./resources/filler_circles.png)
 
+### Update Filler Features:
+ - Recomputes any "Fusion Filler" features in the model.
+ - Uses previously assigned values
+ - Useful if the source body changes shape as the geometry generated is not inherently parametric
 
 ## License
 Samples are licensed under the terms of the [MIT License](http://opensource.org/licenses/MIT). Please see the [LICENSE](LICENSE) file for full details.
